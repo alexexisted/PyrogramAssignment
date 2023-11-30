@@ -1,0 +1,77 @@
+# from sqlalchemy.orm import declarative_base
+from sqlalchemy import Integer, String, Boolean, Column, DateTime, create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime, timedelta
+
+
+from pyrogram import Client, filters
+
+DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost/postgres"
+
+engine = create_engine(DATABASE_URL, echo=True)
+
+
+Base = declarative_base()
+Session = sessionmaker(engine, expire_on_commit=False)
+session = Session()
+
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(String)
+    is_registered = Column(Boolean, default=False)
+    last_message_time = Column(DateTime)
+
+
+def init_models():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+
+
+def get_session():
+    return session
+
+
+init_models()
+
+api_id = 'апи'
+api_hash = 'хэш'
+
+app = Client("my_account", api_id=api_id, api_hash=api_hash)
+
+
+@app.on_message(filters.private)
+async def handle_message(client, message):
+
+    user = session.query(User).filter_by(chat_id=message.chat.id).first()
+    if not user:
+
+        user = User(chat_id=message.chat.id, is_registered=True)
+        session.add(user)
+        session.commit()
+
+    user.last_message_time = datetime.now()
+    session.commit()
+
+    while True:
+
+        if (datetime.now() - user.last_message_time) > timedelta(minutes=10):
+            await client.send_message(message.chat.id, "Добрый день!")
+
+        if (datetime.now() - user.last_message_time) > timedelta(minutes=90):
+            await client.send_message(message.chat.id, "Подготовила для вас материал:")
+            with open("photo.jpg", "rb") as file:
+                await client.send_photo(message.chat.id, file)
+
+        if (datetime.now() - user.last_message_time) > timedelta(hours=2):
+            await client.send_message(message.chat.id, "Скоро вернусь с новым материалом!")
+
+            if user.last_message_time < user.last_message_time.date().replace(hour=9, minute=0, second=0):
+                await client.send_message(message.chat.id, "хорошего дня")
+
+            break
+
+app.run()
